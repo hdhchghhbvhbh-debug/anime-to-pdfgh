@@ -1,60 +1,49 @@
 import streamlit as st
-import cv2
+from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips
 import tempfile
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
 import os
 
-st.title("🎬 محول الأنمي - لقطات كل 4 ثوانٍ")
+st.title("🎬 صانع فيديو اللقطات الثابتة")
+st.write("هذا التطبيق سيجعل الفيديو يتوقف لمدة ثانية واحدة كل 4 ثوانٍ")
 
-uploaded_video = st.file_uploader("ارفع فيديو الأنمي هنا", type=["mp4", "mkv"])
+uploaded_video = st.file_uploader("ارفع الفيديو هنا", type=["mp4", "mov", "avi"])
 
 if uploaded_video:
-    # عرض الفيديو في التطبيق لكي تراه
-    st.video(uploaded_video)
-    
+    # حفظ الملف المرفوع مؤقتاً
     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
         tfile.write(uploaded_video.read())
         video_path = tfile.name
 
-    if st.button("صنع ملف PDF مع نصوص"):
-        st.info("جاري معالجة المشاهد... يرجى الانتظار")
-        cap = cv2.VideoCapture(video_path)
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        interval = int(fps * 4) 
-        
-        pdf_path = "anime_with_text.pdf"
-        c = canvas.Canvas(pdf_path, pagesize=letter)
-        width, height = letter
-        
-        count = 0
-        images_added = 0
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
+    if st.button("بدء إنشاء الفيديو الجديد"):
+        with st.spinner("جاري معالجة الفيديو... قد يستغرق ذلك وقتاً حسب طول المقطع"):
+            clip = VideoFileClip(video_path)
+            duration = clip.duration
             
-            if count % interval == 0:
-                img_name = f"frame_{count}.jpg"
-                cv2.imwrite(img_name, frame)
-                
-                # وضع الصورة في النصف العلوي من الصفحة
-                c.drawImage(img_name, 50, height - 350, width=500, height=300)
-                
-                # كتابة النص تحت الصورة
-                c.setFont("Helvetica", 12)
-                text = f"Scene at: {int(count/fps)} seconds"
-                c.drawString(50, height - 380, text) # إحداثيات النص تحت الصورة
-                
-                c.showPage()
-                os.remove(img_name)
-                images_added += 1
-            count += 1
+            parts = []
+            current_time = 0
             
-        cap.release()
-        c.save()
-        
-        if images_added > 0:
-            st.success(f"تم صنع PDF بنجاح!")
-            with open(pdf_path, "rb") as f:
-                st.download_button("📥 تحميل ملف الـ PDF", f, file_name="anime_scenes.pdf")
+            # تقسيم الفيديو وعمل "تجميد" كل 4 ثوانٍ
+            while current_time < duration:
+                # نأخذ 4 ثوانٍ من الفيديو الأصلي
+                end_time = min(current_time + 4, duration)
+                sub_clip = clip.subclip(current_time, end_time)
+                parts.append(sub_clip)
+                
+                # نأخذ لقطة ثابتة (آخر فريم في الـ 4 ثوانٍ) ونجعلها تتوقف لثانية واحدة
+                freeze_frame = sub_clip.to_ImageClip(t=sub_clip.duration).set_duration(1)
+                parts.append(freeze_frame)
+                
+                current_time += 4
+            
+            # دمج كل الأجزاء في فيديو واحد
+            final_video = concatenate_videoclips(parts)
+            output_path = "frozen_anime.mp4"
+            final_video.write_videofile(output_path, codec="libx264", audio_codec="aac")
+            
+            st.success("تم تجهيز الفيديو!")
+            with open(output_path, "rb") as file:
+                st.download_button("📥 تحميل الفيديو الجديد", file, file_name="frozen_anime.mp4")
+            
+            # تنظيف الملفات
+            clip.close()
+            final_video.close()
