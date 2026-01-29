@@ -1,4 +1,4 @@
+
 streamlit
-pillow
-reportlab
+moviepy
 opencv-python-headless
