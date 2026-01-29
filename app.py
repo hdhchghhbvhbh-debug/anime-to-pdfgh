@@ -5,52 +5,56 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 import os
 
-st.title("🎬 محول الأنمي الذكي (نسخ ثابتة كل 4 ثوانٍ)")
+st.title("🎬 محول الأنمي - لقطات كل 4 ثوانٍ")
 
-uploaded_video = st.file_uploader("ارفع فيديو الأنمي", type=["mp4", "mkv"])
+uploaded_video = st.file_uploader("ارفع فيديو الأنمي هنا", type=["mp4", "mkv"])
 
 if uploaded_video:
-    # حفظ الفيديو المرفوع في ملف مؤقت
-    tfile = tempfile.NamedTemporaryFile(delete=False)
-    tfile.write(uploaded_video.read())
+    # عرض الفيديو في التطبيق لكي تراه
+    st.video(uploaded_video)
     
-    if st.button("صنع ملف PDF للمشاهد"):
-        st.info("جاري استخراج المشاهد كل 4 ثوانٍ... يرجى الانتظار")
-        
-        cap = cv2.VideoCapture(tfile.name)
-        fps = cap.get(cv2.CAP_PROP_FPS) # الحصول على عدد الفريمات في الثانية
-        interval = int(fps * 4) # تحديد الفاصل الزمني (كل 4 ثوانٍ)
-        
-        frames = []
-        count = 0
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if count % interval == 0:
-                # تحويل اللون من BGR إلى RGB ليكون صحيحاً في الـ PDF
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img_path = f"frame_{count}.jpg"
-                cv2.imwrite(img_path, cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR))
-                frames.append(img_path)
-            count += 1
-        cap.release()
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
+        tfile.write(uploaded_video.read())
+        video_path = tfile.name
 
-        # إنشاء ملف الـ PDF
-        pdf_path = "anime_scenes.pdf"
+    if st.button("صنع ملف PDF مع نصوص"):
+        st.info("جاري معالجة المشاهد... يرجى الانتظار")
+        cap = cv2.VideoCapture(video_path)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        interval = int(fps * 4) 
+        
+        pdf_path = "anime_with_text.pdf"
         c = canvas.Canvas(pdf_path, pagesize=letter)
         width, height = letter
-
-        for img in frames:
-            c.drawImage(img, 50, height - 350, width=500, height=300)
-            c.showPage()
-            os.remove(img) # حذف الصورة المؤقتة بعد إضافتها للـ PDF
         
+        count = 0
+        images_added = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
+            
+            if count % interval == 0:
+                img_name = f"frame_{count}.jpg"
+                cv2.imwrite(img_name, frame)
+                
+                # وضع الصورة في النصف العلوي من الصفحة
+                c.drawImage(img_name, 50, height - 350, width=500, height=300)
+                
+                # كتابة النص تحت الصورة
+                c.setFont("Helvetica", 12)
+                text = f"Scene at: {int(count/fps)} seconds"
+                c.drawString(50, height - 380, text) # إحداثيات النص تحت الصورة
+                
+                c.showPage()
+                os.remove(img_name)
+                images_added += 1
+            count += 1
+            
+        cap.release()
         c.save()
         
-        if os.path.exists(pdf_path):
-            st.success("تم تجهيز ملف الـ PDF بنجاح!")
+        if images_added > 0:
+            st.success(f"تم صنع PDF بنجاح!")
             with open(pdf_path, "rb") as f:
-                st.download_button("تحميل ملف الـ PDF", f, file_name="anime_scenes.pdf")
-        else:
-            st.error("حدث خطأ أثناء إنشاء ملف الـ PDF.")
+                st.download_button("📥 تحميل ملف الـ PDF", f, file_name="anime_scenes.pdf")
